@@ -274,14 +274,17 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, deleteDoc, onSnapshot, collection } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js";
 
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'tasklistdb-b425c';
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'focusboard-default-app';
         let auth = null;
         let db = null;
+        let analytics = null;
         let currentUser = null;
         let isDemoUser = false;
+        let unsubscribeTasks = null;
 
-        // Your custom Firebase configuration
+        // Your provided Firebase configuration
         const firebaseConfig = {
             apiKey: "AIzaSyDg4RKbDBMI3OBu41NxD6V_s7-rQNAI58o",
             authDomain: "tasklistdb-b425c.firebaseapp.com",
@@ -296,6 +299,7 @@
             const app = initializeApp(firebaseConfig);
             auth = getAuth(app);
             db = getFirestore(app);
+            try { analytics = getAnalytics(app); } catch(e) { /* analytics optional */ }
 
             if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                 signInWithCustomToken(auth, __initial_auth_token).catch(() => signInAnonymously(auth));
@@ -344,28 +348,35 @@
 
         function setupFirestoreListener(userId) {
             if (!db) return;
+            if (unsubscribeTasks) {
+                unsubscribeTasks();
+                unsubscribeTasks = null;
+            }
+
             const tasksRef = collection(db, 'artifacts', appId, 'users', userId, 'tasks');
             
-            onSnapshot(tasksRef, (snapshot) => {
+            unsubscribeTasks = onSnapshot(tasksRef, (snapshot) => {
                 const cloudTasks = [];
-                snapshot.forEach(docSnap => cloudTasks.push(docSnap.data()));
+                snapshot.forEach(docSnap => cloudTasks.data() && cloudTasks.push(docSnap.data()));
                 
                 if (cloudTasks.length > 0) {
                     window.tasks = cloudTasks;
                     window.saveTasksToLocalStorage();
                     window.renderApp();
                 } else if (window.tasks && window.tasks.length > 0) {
+                    // Push local tasks to cloud if cloud is empty
                     window.tasks.forEach(t => window.syncTaskToCloud(t));
                 }
             }, (error) => {
                 console.warn("Firestore sync error:", error);
+                window.showToast("Cloud sync warning: Check permissions.", "info");
             });
         }
 
         window.handleGoogleSignIn = async function() {
             if (!auth) {
                 activateDemoUser("Alex Rivers", "https://api.dicebear.com/7.x/avataaars/svg?seed=Alex");
-                window.showToast("Signed in as Demo User", "info");
+                window.showToast("Signed in as Demo User (Local Storage mode)", "success");
                 return;
             }
 
@@ -377,7 +388,7 @@
             } catch(e) {
                 console.warn("Google Sign-In popup interrupted:", e.message);
                 activateDemoUser("Alex Rivers", "https://api.dicebear.com/7.x/avataaars/svg?seed=Alex");
-                window.showToast("Popup restricted in preview. Signed in with Demo Profile!", "info");
+                window.showToast("Popup restricted in preview. Signed in with Demo Profile!", "success");
             }
         };
 
@@ -393,6 +404,10 @@
         }
 
         window.handleSignOut = async function() {
+            if (unsubscribeTasks) {
+                unsubscribeTasks();
+                unsubscribeTasks = null;
+            }
             if (isDemoUser) {
                 isDemoUser = false;
                 currentUser = null;
