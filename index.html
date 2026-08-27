@@ -279,7 +279,6 @@
         let auth = null;
         let db = null;
         let currentUser = null;
-        let isDemoUser = false;
 
         // Initialize Firebase safely
         if (typeof __firebase_config !== 'undefined' && __firebase_config) {
@@ -296,12 +295,10 @@
                 }
 
                 onAuthStateChanged(auth, (user) => {
-                    if (!isDemoUser) {
-                        currentUser = user;
-                        updateUserUI(user);
-                        if (user) {
-                            setupFirestoreListener(user.uid);
-                        }
+                    currentUser = user;
+                    updateUserUI(user);
+                    if (user && !user.isAnonymous) {
+                        setupFirestoreListener(user.uid);
                     }
                 });
             } catch(e) {
@@ -320,14 +317,8 @@
                 if (signInBtn) signInBtn.classList.add('hidden');
                 if (userInfo) userInfo.classList.remove('hidden');
                 if (userAvatar) userAvatar.src = user.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.uid}`;
-                if (userName) userName.innerText = user.displayName || 'Signed In User';
+                if (userName) userName.innerText = user.displayName || 'Google User';
                 if (syncStatusText) syncStatusText.innerText = "Cloud Synced";
-            } else if (isDemoUser && currentUser) {
-                if (signInBtn) signInBtn.classList.add('hidden');
-                if (userInfo) userInfo.classList.remove('hidden');
-                if (userAvatar) userAvatar.src = currentUser.photoURL;
-                if (userName) userName.innerText = currentUser.displayName;
-                if (syncStatusText) syncStatusText.innerText = "Demo Session";
             } else {
                 if (signInBtn) signInBtn.classList.remove('hidden');
                 if (userInfo) userInfo.classList.add('hidden');
@@ -355,54 +346,37 @@
             });
         }
 
-        // Global Google Sign-In with robust fallback for iframe previews & popups
+        // Global Google Sign-In with real popup and no fake fallback
         window.handleGoogleSignIn = async function() {
             if (!auth) {
-                activateDemoUser("Alex Rivers", "https://api.dicebear.com/7.x/avataaars/svg?seed=Alex");
-                window.showToast("Signed in as Demo User (Local Storage mode)", "info");
+                window.showToast("Firebase Auth is not configured. Please check your setup guide.", "info");
                 return;
             }
 
             const provider = new GoogleAuthProvider();
             try {
                 const result = await signInWithPopup(auth, provider);
-                isDemoUser = false;
+                currentUser = result.user;
+                updateUserUI(result.user);
                 window.showToast(`Welcome back, ${result.user.displayName || 'User'}!`, "success");
             } catch(e) {
-                console.warn("Google Sign-In popup interrupted:", e.message);
-                activateDemoUser("Alex Rivers", "https://api.dicebear.com/7.x/avataaars/svg?seed=Alex");
-                window.showToast("Google Popup blocked in preview. Signed in with Demo Profile!", "info");
+                console.warn("Google Sign-In popup error:", e.message);
+                window.showToast("Sign-in cancelled or blocked by browser settings.", "info");
             }
         };
 
-        function activateDemoUser(name, avatar) {
-            isDemoUser = true;
-            currentUser = {
-                uid: 'demo_user_123',
-                displayName: name,
-                photoURL: avatar,
-                isAnonymous: false
-            };
-            updateUserUI(currentUser);
-        }
-
         window.handleSignOut = async function() {
-            if (isDemoUser) {
-                isDemoUser = false;
-                currentUser = null;
-                updateUserUI(null);
-                window.showToast("Signed out", "info");
-                return;
-            }
             if (auth) {
                 await signOut(auth);
-                signInAnonymously(auth);
-                window.showToast("Signed out", "info");
+                await signInAnonymously(auth);
+                currentUser = null;
+                updateUserUI(null);
+                window.showToast("Signed out successfully", "info");
             }
         };
 
         window.syncTaskToCloud = async function(task) {
-            if (!db || !currentUser || isDemoUser) return;
+            if (!db || !currentUser || currentUser.isAnonymous) return;
             try {
                 const taskRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'tasks', task.id);
                 await setDoc(taskRef, task);
@@ -412,7 +386,7 @@
         };
 
         window.deleteTaskFromCloud = async function(taskId) {
-            if (!db || !currentUser || isDemoUser) return;
+            if (!db || !currentUser || currentUser.isAnonymous) return;
             try {
                 const taskRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'tasks', taskId);
                 await deleteDoc(taskRef);
