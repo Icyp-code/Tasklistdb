@@ -355,7 +355,7 @@
             });
         }
 
-        // Global Google Sign-In with fallback for iframe preview limitations
+        // Global Google Sign-In with robust fallback for iframe previews & popups
         window.handleGoogleSignIn = async function() {
             if (!auth) {
                 activateDemoUser("Alex Rivers", "https://api.dicebear.com/7.x/avataaars/svg?seed=Alex");
