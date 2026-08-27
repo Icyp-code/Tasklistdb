@@ -1,0 +1,841 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FocusBoard - Task Dashboard</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        
+        .sortable-ghost { opacity: 0.3; background-color: #e2e8f0; }
+        .dark .sortable-ghost { background-color: #334155; }
+        .subtask-ghost { opacity: 0.4; background-color: #e0e7ff; border: 1.5px dashed #6366f1; border-radius: 0.5rem; }
+        .dark .subtask-ghost { background-color: #312e81; border-color: #818cf8; }
+        .subtask-chosen { background-color: #eef2ff; }
+        .dark .subtask-chosen { background-color: #1e1b4b; }
+        
+        .subtask-card-handle, .subtask-modal-handle { touch-action: none; -webkit-user-select: none; user-select: none; }
+        
+        .custom-scrollbar::-webkit-scrollbar { width: 5px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; }
+        .dark .custom-scrollbar::-webkit-scrollbar-thumb { background: #475569; }
+    </style>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f0fdf4',
+                            500: '#22c55e',
+                            600: '#16a34a',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-100 min-h-full flex flex-col transition-colors duration-200">
+
+    <header class="bg-white/80 dark:bg-slate-800/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-700/60 sticky top-0 z-30">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex items-center justify-between gap-4">
+            <!-- Brand Logo -->
+            <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center text-white shadow-lg shadow-indigo-500/20">
+                    <i class="fa-solid fa-list-check text-lg"></i>
+                </div>
+                <div>
+                    <h1 class="text-lg font-bold bg-gradient-to-r from-indigo-600 to-violet-600 dark:from-indigo-400 dark:to-violet-400 bg-clip-text text-transparent leading-none">FocusBoard</h1>
+                    <p class="text-[11px] text-slate-400 font-medium">Eisenhower Task Matrix</p>
+                </div>
+            </div>
+
+            <!-- Sync Badge & User Actions -->
+            <div class="flex items-center space-x-3">
+                <div id="syncBadge" class="hidden sm:flex items-center space-x-1.5 px-3 py-1 rounded-full text-xs font-medium bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/60">
+                    <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span id="syncStatusText">Cloud Saved</span>
+                </div>
+
+                <button onclick="toggleDarkMode()" class="p-2 rounded-xl text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/60 transition-colors" title="Toggle Theme">
+                    <i class="fa-solid fa-moon dark:hidden"></i>
+                    <i class="fa-solid fa-sun hidden dark:block text-amber-400"></i>
+                </button>
+
+                <div id="authContainer" class="flex items-center space-x-2">
+                    <button id="signInBtn" onclick="handleGoogleSignIn()" class="flex items-center space-x-2 px-3.5 py-1.5 bg-slate-100 dark:bg-slate-700/70 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-semibold transition-all">
+                        <i class="fa-brands fa-google text-indigo-500"></i>
+                        <span>Sign In</span>
+                    </button>
+                    <div id="userInfo" class="hidden items-center space-x-2">
+                        <img id="userAvatar" src="" class="w-8 h-8 rounded-full border border-indigo-400/50 object-cover" alt="Avatar">
+                        <span id="userName" class="text-xs font-medium text-slate-700 dark:text-slate-200 hidden md:inline"></span>
+                        <button onclick="handleSignOut()" class="p-2 text-slate-400 hover:text-rose-500 text-xs" title="Sign Out">
+                            <i class="fa-solid fa-right-from-bracket"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <button onclick="openTaskModal()" class="flex items-center space-x-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-xl text-xs font-semibold shadow-md shadow-indigo-500/20 transition-all">
+                    <i class="fa-solid fa-plus"></i>
+                    <span class="hidden sm:inline">New Task</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <div id="toastNotification" class="fixed bottom-5 right-5 z-50 transform translate-y-10 opacity-0 transition-all duration-300 pointer-events-none max-w-sm">
+        <div class="bg-slate-900/90 dark:bg-slate-100/90 backdrop-blur-md text-white dark:text-slate-900 px-4 py-3 rounded-2xl shadow-xl border border-slate-700 dark:border-slate-300 flex items-center space-x-3 text-xs">
+            <i id="toastIcon" class="fa-solid fa-circle-info text-indigo-400 dark:text-indigo-600 text-sm"></i>
+            <span id="toastMsg" class="font-medium"></span>
+        </div>
+    </div>
+
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4">
+        <div class="bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-pink-500/10 dark:from-indigo-950/40 dark:via-purple-950/40 dark:to-pink-950/40 border border-indigo-200/60 dark:border-indigo-800/50 rounded-xl px-4 py-2.5 flex items-center justify-between gap-3 shadow-sm">
+            <div class="flex items-center space-x-3 min-w-0 flex-grow">
+                <div class="w-7 h-7 rounded-lg bg-indigo-600/10 dark:bg-indigo-400/20 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                    <i class="fa-solid fa-quote-left text-xs"></i>
+                </div>
+                <div>
+                    <p id="quoteText" class="text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-200 italic leading-snug">"Focus on being productive instead of busy."</p>
+                    <p id="quoteAuthor" class="text-[11px] text-slate-400 font-medium mt-0.5">— Tim Ferriss</p>
+                </div>
+            </div>
+            <button onclick="rotateQuote()" class="px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/70 text-slate-600 dark:text-slate-300 rounded-xl text-xs font-semibold flex items-center space-x-1.5 shadow-sm transition-all shrink-0">
+                <i class="fa-solid fa-arrows-rotate text-indigo-500"></i>
+                <span>New Quote</span>
+            </button>
+        </div>
+    </div>
+
+    <main class="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-5 h-full">
+            
+            <!-- Quadrant 1: Do First -->
+            <div class="flex flex-col bg-white dark:bg-slate-800/60 rounded-2xl border border-rose-100 dark:border-rose-900/30 p-4 shadow-sm hover:shadow-md transition-shadow">
+                <div class="flex items-center justify-between pb-3 mb-3 border-b border-rose-100 dark:border-rose-900/40">
+                    <div class="flex items-center space-x-2">
+                        <span class="w-3 h-3 rounded-full bg-rose-500"></span>
+                        <h2 class="font-bold text-slate-800 dark:text-slate-100 text-sm">Do First</h2>
+                        <span class="text-xs text-slate-400 font-normal">(Urgent & Important)</span>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <span id="time_do_first" class="text-[11px] font-semibold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/60 px-2 py-0.5 rounded-full border border-rose-200/60 dark:border-rose-800/40">0m</span>
+                        <span id="count_do_first" class="px-2 py-0.5 rounded-full text-xs font-bold bg-rose-100 dark:bg-rose-900/60 text-rose-600 dark:text-rose-400">0</span>
+                    </div>
+                </div>
+                <div id="quadrant_do_first" class="task-list flex-grow space-y-3 min-h-[160px] custom-scrollbar overflow-y-auto pr-1" data-category="do_first"></div>
+            </div>
+
+            <!-- Quadrant 2: Schedule -->
+            <div class="flex flex-col bg-white dark:bg-slate-800/60 rounded-2xl border border-indigo-100 dark:border-indigo-900/30 p-4 shadow-sm hover:shadow-md transition-shadow">
+                <div class="flex items-center justify-between pb-3 mb-3 border-b border-indigo-100 dark:border-indigo-900/40">
+                    <div class="flex items-center space-x-2">
+                        <span class="w-3 h-3 rounded-full bg-indigo-500"></span>
+                        <h2 class="font-bold text-slate-800 dark:text-slate-100 text-sm">Schedule</h2>
+                        <span class="text-xs text-slate-400 font-normal">(Less Urgent & Important)</span>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <span id="time_schedule" class="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-2 py-0.5 rounded-full border border-indigo-200/60 dark:border-indigo-800/40">0m</span>
+                        <span id="count_schedule" class="px-2 py-0.5 rounded-full text-xs font-bold bg-indigo-100 dark:bg-indigo-900/60 text-indigo-600 dark:text-indigo-400">0</span>
+                    </div>
+                </div>
+                <div id="quadrant_schedule" class="task-list flex-grow space-y-3 min-h-[160px] custom-scrollbar overflow-y-auto pr-1" data-category="schedule"></div>
+            </div>
+
+            <!-- Quadrant 3: Delegate -->
+            <div class="flex flex-col bg-white dark:bg-slate-800/60 rounded-2xl border border-amber-100 dark:border-amber-900/30 p-4 shadow-sm hover:shadow-md transition-shadow">
+                <div class="flex items-center justify-between pb-3 mb-3 border-b border-amber-100 dark:border-amber-900/40">
+                    <div class="flex items-center space-x-2">
+                        <span class="w-3 h-3 rounded-full bg-amber-500"></span>
+                        <h2 class="font-bold text-slate-800 dark:text-slate-100 text-sm">Delegate</h2>
+                        <span class="text-xs text-slate-400 font-normal">(Urgent & Less Important)</span>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <span id="time_delegate" class="text-[11px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/60 px-2 py-0.5 rounded-full border border-amber-200/60 dark:border-amber-800/40">0m</span>
+                        <span id="count_delegate" class="px-2 py-0.5 rounded-full text-xs font-bold bg-amber-100 dark:bg-amber-900/60 text-amber-600 dark:text-amber-400">0</span>
+                    </div>
+                </div>
+                <div id="quadrant_delegate" class="task-list flex-grow space-y-3 min-h-[160px] custom-scrollbar overflow-y-auto pr-1" data-category="delegate"></div>
+            </div>
+
+            <!-- Quadrant 4: Backlog / Waiting -->
+            <div class="flex flex-col bg-white dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700/50 p-4 shadow-sm hover:shadow-md transition-shadow">
+                <div class="flex items-center justify-between pb-3 mb-3 border-b border-slate-100 dark:border-slate-700/60">
+                    <div class="flex items-center space-x-2">
+                        <span class="w-3 h-3 rounded-full bg-slate-400"></span>
+                        <h2 class="font-bold text-slate-800 dark:text-slate-100 text-sm">Backlog / Waiting</h2>
+                        <span class="text-xs text-slate-400 font-normal">(Low Priority)</span>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <span id="time_waiting" class="text-[11px] font-semibold text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-600">0m</span>
+                        <span id="count_waiting" class="px-2 py-0.5 rounded-full text-xs font-bold bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300">0</span>
+                    </div>
+                </div>
+                <div id="quadrant_waiting" class="task-list flex-grow space-y-3 min-h-[160px] custom-scrollbar overflow-y-auto pr-1" data-category="waiting"></div>
+            </div>
+
+        </div>
+    </main>
+
+    <div id="taskModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-white dark:bg-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-700/60 max-h-[90vh] flex flex-col">
+            <div class="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-700/60">
+                <h3 id="modalTitle" class="text-base font-bold text-slate-800 dark:text-slate-100">Create New Task</h3>
+                <button onclick="closeTaskModal()" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-sm p-1">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <form id="taskForm" onsubmit="handleTaskSubmit(event)" class="mt-4 space-y-4 overflow-y-auto custom-scrollbar pr-1 flex-grow">
+                <input type="hidden" id="taskId">
+
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div class="sm:col-span-2">
+                        <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Task Title *</label>
+                        <input type="text" id="taskTitle" required placeholder="What needs to be done?" class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none dark:text-slate-100">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Est. Time (mins)</label>
+                        <div class="relative">
+                            <input type="number" id="taskTime" min="1" max="1440" placeholder="30" value="30" class="w-full pl-7 pr-3 py-2 bg-slate-50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none dark:text-slate-100">
+                            <i class="fa-regular fa-clock absolute left-2.5 top-2.5 text-slate-400 text-xs"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">Quadrant / Category</label>
+                    <div class="grid grid-cols-2 gap-2 text-xs">
+                        <label class="flex items-center space-x-2 p-2 rounded-xl border border-slate-200 dark:border-slate-700 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                            <input type="radio" name="taskCategory" value="do_first" class="text-indigo-600 focus:ring-0" checked>
+                            <span class="font-medium text-rose-600 dark:text-rose-400">Do First</span>
+                        </label>
+                        <label class="flex items-center space-x-2 p-2 rounded-xl border border-slate-200 dark:border-slate-700 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                            <input type="radio" name="taskCategory" value="schedule" class="text-indigo-600 focus:ring-0">
+                            <span class="font-medium text-indigo-600 dark:text-indigo-400">Schedule</span>
+                        </label>
+                        <label class="flex items-center space-x-2 p-2 rounded-xl border border-slate-200 dark:border-slate-700 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                            <input type="radio" name="taskCategory" value="delegate" class="text-indigo-600 focus:ring-0">
+                            <span class="font-medium text-amber-600 dark:text-amber-400">Delegate</span>
+                        </label>
+                        <label class="flex items-center space-x-2 p-2 rounded-xl border border-slate-200 dark:border-slate-700 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                            <input type="radio" name="taskCategory" value="waiting" class="text-indigo-600 focus:ring-0">
+                            <span class="font-medium text-slate-600 dark:text-slate-400">Backlog</span>
+    <!-- Firebase & Auth Script -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, deleteDoc, onSnapshot, collection } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // =========================================================================
+        // 🔑 STEP 5: PASTE YOUR FIREBASE CONFIG HERE
+        // Replace `null` below with your firebaseConfig object from Firebase Console
+        // =========================================================================
+        const customFirebaseConfig = null; 
+        /*
+        Example:
+        const customFirebaseConfig = {
+          apiKey: "AIzaSy...",
+          authDomain: "your-project-id.firebaseapp.com",
+          projectId: "your-project-id",
+          storageBucket: "your-project-id.appspot.com",
+          messagingSenderId: "123456789",
+          appId: "1:123456789:web:abcdef..."
+        };
+        */
+
+        const rawConfig = customFirebaseConfig 
+            ? customFirebaseConfig 
+            : (typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null);
+
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'focusboard-default-app';
+        let auth = null;
+        let db = null;
+        let currentUser = null;
+        let isDemoUser = false;
+
+        // Initialize Firebase safely
+        if (rawConfig) {
+            try {
+                const firebaseConfig = typeof rawConfig === 'string' ? JSON.parse(rawConfig) : rawConfig;
+                const app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    signInWithCustomToken(auth, __initial_auth_token).catch(() => signInAnonymously(auth));
+                } else {
+                    signInAnonymously(auth);
+                }
+
+                onAuthStateChanged(auth, (user) => {
+                    if (!isDemoUser) {
+                        currentUser = user;
+                        updateUserUI(user);
+                        if (user) {
+                            setupFirestoreListener(user.uid);
+                        }
+                    }
+                });
+            } catch(e) {
+                console.warn("Firebase initialization warning:", e);
+            }
+        }
+
+        function updateUserUI(user) {
+            const signInBtn = document.getElementById('signInBtn');
+            const userInfo = document.getElementById('userInfo');
+            const userAvatar = document.getElementById('userAvatar');
+            const userName = document.getElementById('userName');
+            const syncStatusText = document.getElementById('syncStatusText');
+
+            if (user && !user.isAnonymous) {
+                if (signInBtn) signInBtn.classList.add('hidden');
+                if (userInfo) userInfo.classList.remove('hidden');
+                if (userAvatar) userAvatar.src = user.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.uid}`;
+                if (userName) userName.innerText = user.displayName || 'Signed In User';
+                if (syncStatusText) syncStatusText.innerText = "Cloud Synced";
+            } else if (isDemoUser && currentUser) {
+                if (signInBtn) signInBtn.classList.add('hidden');
+                if (userInfo) userInfo.classList.remove('hidden');
+                if (userAvatar) userAvatar.src = currentUser.photoURL;
+                if (userName) userName.innerText = currentUser.displayName;
+                if (syncStatusText) syncStatusText.innerText = "Demo Session";
+            } else {
+                if (signInBtn) signInBtn.classList.remove('hidden');
+                if (userInfo) userInfo.classList.add('hidden');
+                if (syncStatusText) syncStatusText.innerText = "Saved Locally";
+            }
+        }
+
+        function setupFirestoreListener(userId) {
+            if (!db) return;
+            const tasksRef = collection(db, 'artifacts', appId, 'users', userId, 'tasks');
+            
+            onSnapshot(tasksRef, (snapshot) => {
+                const cloudTasks = [];
+                snapshot.forEach(docSnap => cloudTasks.push(docSnap.data()));
+                
+                if (cloudTasks.length > 0) {
+                    window.tasks = cloudTasks;
+                    window.saveTasksToLocalStorage();
+                    window.renderApp();
+                } else if (window.tasks && window.tasks.length > 0) {
+                    window.tasks.forEach(t => window.syncTaskToCloud(t));
+                }
+            }, (error) => {
+                console.warn("Firestore sync error:", error);
+            });
+        }
+
+        window.handleGoogleSignIn = async function() {
+            if (!auth) {
+                activateDemoUser("Alex Rivers", "https://api.dicebear.com/7.x/avataaars/svg?seed=Alex");
+                window.showToast("Signed in as Demo User (Local Storage mode)", "info");
+                return;
+            }
+
+            const provider = new GoogleAuthProvider();
+            try {
+                const result = await signInWithPopup(auth, provider);
+                isDemoUser = false;
+                window.showToast(`Welcome back, ${result.user.displayName || 'User'}!`, "success");
+            } catch(e) {
+                console.warn("Google Sign-In popup interrupted:", e.message);
+                activateDemoUser("Alex Rivers", "https://api.dicebear.com/7.x/avataaars/svg?seed=Alex");
+                window.showToast("Google Popup blocked in preview. Signed in with Demo Profile!", "info");
+            }
+        };
+
+        function activateDemoUser(name, avatar) {
+            isDemoUser = true;
+            currentUser = {
+                uid: 'demo_user_123',
+                displayName: name,
+                photoURL: avatar,
+                isAnonymous: false
+            };
+            updateUserUI(currentUser);
+        }
+
+        window.handleSignOut = async function() {
+            if (isDemoUser) {
+                isDemoUser = false;
+                currentUser = null;
+                updateUserUI(null);
+                window.showToast("Signed out", "info");
+                return;
+            }
+            if (auth) {
+                await signOut(auth);
+                signInAnonymously(auth);
+                window.showToast("Signed out", "info");
+            }
+        };
+
+        window.syncTaskToCloud = async function(task) {
+            if (!db || !currentUser || isDemoUser) return;
+            try {
+                const taskRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'tasks', task.id);
+                await setDoc(taskRef, task);
+            } catch(e) {
+                console.warn("Cloud save failed:", e);
+            }
+        };
+
+        window.deleteTaskFromCloud = async function(taskId) {
+            if (!db || !currentUser || isDemoUser) return;
+            try {
+                const taskRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'tasks', taskId);
+                await deleteDoc(taskRef);
+            } catch(e) {
+                console.warn("Cloud delete failed:", e);
+            }
+        };
+    </script>
+
+    <script>
+        function showToast(message, type = 'info') {
+            const toast = document.getElementById('toastNotification');
+            const toastMsg = document.getElementById('toastMsg');
+            const toastIcon = document.getElementById('toastIcon');
+
+            if (!toast || !toastMsg) return;
+
+            toastMsg.innerText = message;
+            if (type === 'success') {
+                toastIcon.className = "fa-solid fa-circle-check text-emerald-400 dark:text-emerald-500 text-sm";
+            } else {
+                toastIcon.className = "fa-solid fa-circle-info text-indigo-400 dark:text-indigo-500 text-sm";
+            }
+
+            toast.classList.remove('translate-y-10', 'opacity-0', 'pointer-events-none');
+            toast.classList.add('translate-y-0', 'opacity-100');
+
+            setTimeout(() => {
+                toast.classList.remove('translate-y-0', 'opacity-100');
+                toast.classList.add('translate-y-10', 'opacity-0', 'pointer-events-none');
+            }, 3500);
+        }
+        window.showToast = showToast;
+
+        const MOTIVATIONAL_QUOTES = [
+            { quote: "Focus on being productive instead of busy.", author: "Tim Ferriss" },
+            { quote: "The secret of getting ahead is getting started.", author: "Mark Twain" },
+            { quote: "Action is the foundational key to all success.", author: "Pablo Picasso" },
+            { quote: "You don't have to see the whole staircase, just take the first step.", author: "Martin Luther King Jr." },
+            { quote: "Simplicity boils down to two steps: Identify the essential. Eliminate the rest.", author: "Leo Babauta" }
+        ];
+
+        let currentQuoteIndex = 0;
+
+        function rotateQuote() {
+            currentQuoteIndex = (currentQuoteIndex + 1) % MOTIVATIONAL_QUOTES.length;
+            const textEl = document.getElementById('quoteText');
+            const authorEl = document.getElementById('quoteAuthor');
+            if (textEl && authorEl) {
+                textEl.innerText = `"${MOTIVATIONAL_QUOTES[currentQuoteIndex].quote}"`;
+                authorEl.innerText = `— ${MOTIVATIONAL_QUOTES[currentQuoteIndex].author}`;
+            }
+        }
+
+        function toggleDarkMode() {
+            document.documentElement.classList.toggle('dark');
+        }
+
+        function escapeHtml(text) {
+            return (text || '').replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+        }
+
+        // Core Task Management State
+        const STORAGE_KEY = 'focusboard_tasks_v2';
+        let tasks = [];
+        let modalSortable = null;
+        let activeCardSortables = [];
+
+        const defaultTasks = [
+            {
+                id: 'task-1',
+                title: 'Review Quarterly Strategy & Roadmap',
+                category: 'do_first',
+                estimatedMinutes: 45,
+                subtasks: [
+                    { id: 'sub-1', title: 'Analyze Q3 user feedback data', completed: true },
+                    { id: 'sub-2', title: 'Draft core goals for Q4 launch', completed: false },
+                    { id: 'sub-3', title: 'Schedule alignment meeting with team', completed: false }
+                ]
+            },
+            {
+                id: 'task-2',
+                title: 'Design UI Prototype for Mobile View',
+                category: 'schedule',
+                estimatedMinutes: 60,
+                subtasks: [
+                    { id: 'sub-4', title: 'Wireframe component layout', completed: false },
+                    { id: 'sub-5', title: 'Test touch target accessibility', completed: false }
+                ]
+            },
+            {
+                id: 'task-3',
+                title: 'Filter & Organize Backlog Tickets',
+                category: 'waiting',
+                estimatedMinutes: 20,
+                subtasks: [
+                    { id: 'sub-6', title: 'Archive outdated feature requests', completed: true }
+                ]
+            }
+        ];
+
+        function loadTasks() {
+            const raw = localStorage.getItem(STORAGE_KEY);
+            if (raw) {
+                try {
+                    tasks = JSON.parse(raw);
+                } catch (e) {
+                    tasks = [...defaultTasks];
+                }
+            } else {
+                tasks = [...defaultTasks];
+            }
+            window.tasks = tasks;
+        }
+
+        function saveTasksToLocalStorage() {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+        }
+        window.saveTasksToLocalStorage = saveTasksToLocalStorage;
+
+        function renderApp() {
+            const categories = ['do_first', 'schedule', 'delegate', 'waiting'];
+            
+            activeCardSortables.forEach(s => s.destroy());
+            activeCardSortables = [];
+
+            categories.forEach(cat => {
+                const container = document.getElementById(`quadrant_${cat}`);
+                const countEl = document.getElementById(`count_${cat}`);
+                const timeEl = document.getElementById(`time_${cat}`);
+
+                if (!container) return;
+
+                const catTasks = tasks.filter(t => t.category === cat);
+                
+                if (countEl) countEl.innerText = catTasks.length;
+                if (timeEl) {
+                    const totalMins = catTasks.reduce((acc, t) => acc + (parseInt(t.estimatedMinutes) || 0), 0);
+                    timeEl.innerText = totalMins >= 60 ? `${Math.floor(totalMins/60)}h ${totalMins%60}m` : `${totalMins}m`;
+                }
+
+                if (catTasks.length === 0) {
+                    container.innerHTML = `
+                        <div class="h-full min-h-[120px] border-2 border-dashed border-slate-200 dark:border-slate-700/60 rounded-xl flex flex-col items-center justify-center p-4 text-center text-slate-400 dark:text-slate-500">
+                            <i class="fa-solid fa-inbox text-lg mb-1 opacity-60"></i>
+                            <span class="text-xs font-medium">No tasks here yet</span>
+                        </div>`;
+                } else {
+                    container.innerHTML = catTasks.map(task => renderTaskCardHtml(task)).join('');
+                    
+                    catTasks.forEach(task => {
+                        const subtaskContainer = document.getElementById(`subtask-list-${task.id}`);
+                        if (subtaskContainer && window.Sortable) {
+                            const sortable = new window.Sortable(subtaskContainer, {
+                                animation: 180,
+                                handle: '.subtask-card-handle',
+                                ghostClass: 'subtask-ghost',
+                                chosenClass: 'subtask-chosen',
+                                onEnd: (evt) => handleSubtaskReorderOnCard(task.id, evt)
+                            });
+                            activeCardSortables.push(sortable);
+                        }
+                    });
+                }
+            });
+
+            initQuadrantSortables();
+        }
+        window.renderApp = renderApp;
+
+        function renderTaskCardHtml(task) {
+            const subtasks = task.subtasks || [];
+            const completedCount = subtasks.filter(s => s.completed).length;
+            const progressPct = subtasks.length > 0 ? Math.round((completedCount / subtasks.length) * 100) : 0;
+
+            return `
+                <div class="task-card bg-white dark:bg-slate-800 rounded-xl p-3.5 border border-slate-200/80 dark:border-slate-700/80 shadow-sm hover:shadow transition-all group" data-task-id="${task.id}">
+                    <div class="flex items-start justify-between gap-2">
+                        <div class="flex items-start space-x-2.5 min-w-0 flex-grow">
+                            <i class="fa-solid fa-grip-vertical text-slate-300 dark:text-slate-600 group-hover:text-slate-400 dark:group-hover:text-slate-400 mt-1 cursor-grab active:cursor-grabbing task-drag-handle text-xs" title="Drag Task to Move Quadrant"></i>
+                            <div class="min-w-0 flex-grow">
+                                <h3 class="text-xs sm:text-sm font-semibold text-slate-800 dark:text-slate-100 leading-snug break-words">${escapeHtml(task.title)}</h3>
+                                <div class="flex items-center space-x-3 mt-1.5 text-[11px] text-slate-400">
+                                    <span class="flex items-center space-x-1">
+                                        <i class="fa-regular fa-clock text-[10px]"></i>
+                                        <span>${task.estimatedMinutes || 0} mins</span>
+                                    </span>
+                                    ${subtasks.length > 0 ? `
+                                        <span class="flex items-center space-x-1 font-medium ${progressPct === 100 ? 'text-emerald-500' : 'text-slate-400'}">
+                                            <i class="fa-regular fa-square-check text-[10px]"></i>
+                                            <span>${completedCount}/${subtasks.length} subtasks</span>
+                                        </span>
+                                    ` : ''}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center space-x-1 opacity-80 group-hover:opacity-100 transition-opacity">
+                            <button onclick="openTaskModal('${task.id}')" class="p-1.5 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700/60 text-xs transition-colors" title="Edit Task">
+                                <i class="fa-solid fa-pen"></i>
+                            </button>
+                            <button onclick="deleteTask('${task.id}')" class="p-1.5 text-slate-400 hover:text-rose-500 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700/60 text-xs transition-colors" title="Delete Task">
+                                <i class="fa-solid fa-trash-can"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    ${subtasks.length > 0 ? `
+                        <div class="w-full bg-slate-100 dark:bg-slate-700/60 rounded-full h-1.5 mt-3 overflow-hidden">
+                            <div class="bg-indigo-500 h-1.5 rounded-full transition-all duration-300" style="width: ${progressPct}%"></div>
+                        </div>
+
+                        <div id="subtask-list-${task.id}" class="mt-2.5 space-y-1.5 pl-1" data-task-id="${task.id}">
+                            ${subtasks.map((sub) => `
+                                <div class="subtask-item flex items-center justify-between text-xs py-1 px-2 rounded-lg bg-slate-50 dark:bg-slate-700/40 hover:bg-indigo-50/50 dark:hover:bg-slate-700/70 border border-slate-100 dark:border-slate-700/40 transition-colors group/sub" data-subtask-id="${sub.id}">
+                                    <div class="flex items-center space-x-2 min-w-0 flex-grow pr-2">
+                                        <i class="fa-solid fa-grip-vertical text-slate-300 dark:text-slate-600 subtask-card-handle cursor-grab active:cursor-grabbing hover:text-indigo-500 text-[10px]" title="Drag to reorder subtask"></i>
+                                        <input type="checkbox" ${sub.completed ? 'checked' : ''} onchange="toggleSubtask('${task.id}', '${sub.id}')" class="rounded border-slate-300 text-indigo-600 focus:ring-0 cursor-pointer w-3.5 h-3.5">
+                                        <span class="truncate ${sub.completed ? 'line-through text-slate-400 dark:text-slate-500' : 'text-slate-700 dark:text-slate-200'}">${escapeHtml(sub.title)}</span>
+                                    </div>
+                                    <span class="text-[10px] text-slate-300 dark:text-slate-600 group-hover/sub:text-indigo-400 flex items-center space-x-1">
+                                        <i class="fa-solid fa-up-down text-[9px]"></i>
+                                    </span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+        }
+
+        function initQuadrantSortables() {
+            const categories = ['do_first', 'schedule', 'delegate', 'waiting'];
+            categories.forEach(cat => {
+                const el = document.getElementById(`quadrant_${cat}`);
+                if (el && window.Sortable) {
+                    new window.Sortable(el, {
+                        group: 'quadrants',
+                        animation: 200,
+                        handle: '.task-drag-handle',
+                        ghostClass: 'sortable-ghost',
+                        onEnd: (evt) => {
+                            const taskId = evt.item.getAttribute('data-task-id');
+                            const targetCategory = evt.to.getAttribute('data-category');
+                            
+                            if (taskId && targetCategory) {
+                                const task = tasks.find(t => t.id === taskId);
+                                if (task && task.category !== targetCategory) {
+                                    task.category = targetCategory;
+                                    saveTasksToLocalStorage();
+                                    if (window.syncTaskToCloud) window.syncTaskToCloud(task);
+                                    showToast(`Task moved to ${formatCategoryName(targetCategory)}`, 'success');
+                                    renderApp();
+                                }
+                            }
+                        }
+                    });
+                }
+            });
+        }
+
+        function formatCategoryName(cat) {
+            switch(cat) {
+                case 'do_first': return 'Do First';
+                case 'schedule': return 'Schedule';
+                case 'delegate': return 'Delegate';
+                case 'waiting': return 'Backlog';
+                default: return cat;
+            }
+        }
+
+        function handleSubtaskReorderOnCard(taskId, evt) {
+            const task = tasks.find(t => t.id === taskId);
+            if (!task || !task.subtasks) return;
+
+            const newSubtaskIds = Array.from(evt.to.children)
+                .map(child => child.getAttribute('data-subtask-id'))
+                .filter(Boolean);
+
+            const reordered = [];
+            newSubtaskIds.forEach(subId => {
+                const found = task.subtasks.find(s => s.id === subId);
+                if (found) reordered.push(found);
+            });
+
+            task.subtasks = reordered;
+            saveTasksToLocalStorage();
+            if (window.syncTaskToCloud) window.syncTaskToCloud(task);
+            showToast('Subtasks reordered!', 'info');
+        }
+
+        function toggleSubtask(taskId, subtaskId) {
+            const task = tasks.find(t => t.id === taskId);
+            if (!task || !task.subtasks) return;
+
+            const sub = task.subtasks.find(s => s.id === subtaskId);
+            if (sub) {
+                sub.completed = !sub.completed;
+                saveTasksToLocalStorage();
+                if (window.syncTaskToCloud) window.syncTaskToCloud(task);
+                renderApp();
+            }
+        }
+
+        function deleteTask(taskId) {
+            tasks = tasks.filter(t => t.id !== taskId);
+            saveTasksToLocalStorage();
+            if (window.deleteTaskFromCloud) window.deleteTaskFromCloud(taskId);
+            renderApp();
+            showToast('Task deleted', 'info');
+        }
+
+        function openTaskModal(taskId = null) {
+            const modal = document.getElementById('taskModal');
+            const form = document.getElementById('taskForm');
+            const modalTitle = document.getElementById('modalTitle');
+            const container = document.getElementById('subtasksContainer');
+            
+            form.reset();
+            container.innerHTML = '';
+
+            if (taskId) {
+                const task = tasks.find(t => t.id === taskId);
+                if (!task) return;
+
+                modalTitle.innerText = "Edit Task";
+                document.getElementById('taskId').value = task.id;
+                document.getElementById('taskTitle').value = task.title;
+                document.getElementById('taskTime').value = task.estimatedMinutes || 30;
+                
+                const catRadio = form.querySelector(`input[name="taskCategory"][value="${task.category}"]`);
+                if (catRadio) catRadio.checked = true;
+
+                if (task.subtasks && task.subtasks.length > 0) {
+                    task.subtasks.forEach(s => addSubtaskInput(s.title, s.completed, s.id));
+                }
+            } else {
+                modalTitle.innerText = "Create New Task";
+                document.getElementById('taskId').value = '';
+                document.getElementById('taskTime').value = 30;
+                addSubtaskInput('', false);
+            }
+
+            if (window.Sortable && container) {
+                if (modalSortable) modalSortable.destroy();
+                modalSortable = new window.Sortable(container, {
+                    animation: 150,
+                    handle: '.subtask-modal-handle',
+                    ghostClass: 'subtask-ghost',
+                    chosenClass: 'subtask-chosen'
+                });
+            }
+
+            modal.classList.remove('hidden');
+        }
+        window.openTaskModal = openTaskModal;
+
+        function closeTaskModal() {
+            const modal = document.getElementById('taskModal');
+            if (modal) modal.classList.add('hidden');
+        }
+        window.closeTaskModal = closeTaskModal;
+
+        function addSubtaskInput(title = '', completed = false, id = null) {
+            const container = document.getElementById('subtasksContainer');
+            if (!container) return;
+
+            const subId = id || 'sub_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
+            const subRow = document.createElement('div');
+            subRow.className = 'subtask-modal-row flex items-center space-x-2 p-2 bg-slate-50 dark:bg-slate-700/40 rounded-xl border border-slate-200/70 dark:border-slate-700';
+            subRow.setAttribute('data-sub-id', subId);
+
+            subRow.innerHTML = `
+                <i class="fa-solid fa-grip-vertical text-slate-300 dark:text-slate-500 subtask-modal-handle cursor-grab active:cursor-grabbing hover:text-indigo-500 px-1 text-xs" title="Drag to reorder step"></i>
+                <input type="checkbox" class="subtask-completed-input rounded border-slate-300 text-indigo-600 focus:ring-0 cursor-pointer" ${completed ? 'checked' : ''}>
+                <input type="text" value="${escapeHtml(title)}" placeholder="Add action step..." class="subtask-title-input flex-grow bg-transparent text-xs focus:outline-none dark:text-slate-100">
+                <button type="button" onclick="this.closest('.subtask-modal-row').remove()" class="text-slate-400 hover:text-rose-500 text-xs px-1">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            `;
+            container.appendChild(subRow);
+        }
+        window.addSubtaskInput = addSubtaskInput;
+
+        function handleTaskSubmit(evt) {
+            evt.preventDefault();
+            const taskId = document.getElementById('taskId').value;
+            const title = document.getElementById('taskTitle').value.trim();
+            const estimatedMinutes = parseInt(document.getElementById('taskTime').value) || 30;
+            const category = document.querySelector('input[name="taskCategory"]:checked')?.value || 'do_first';
+
+            const subtaskRows = document.querySelectorAll('.subtask-modal-row');
+            const subtasks = [];
+            subtaskRows.forEach(row => {
+                const subTitle = row.querySelector('.subtask-title-input')?.value.trim();
+                const completed = row.querySelector('.subtask-completed-input')?.checked || false;
+                const subId = row.getAttribute('data-sub-id') || ('sub_' + Date.now());
+
+                if (subTitle) {
+                    subtasks.push({
+                        id: subId,
+                        title: subTitle,
+                        completed: completed
+                    });
+                }
+            });
+
+            if (taskId) {
+                const task = tasks.find(t => t.id === taskId);
+                if (task) {
+                    task.title = title;
+                    task.estimatedMinutes = estimatedMinutes;
+                    task.category = category;
+                    task.subtasks = subtasks;
+                    if (window.syncTaskToCloud) window.syncTaskToCloud(task);
+                }
+            } else {
+                const newTask = {
+                    id: 'task_' + Date.now(),
+                    title: title,
+                    estimatedMinutes: estimatedMinutes,
+                    category: category,
+                    subtasks: subtasks
+                };
+                tasks.push(newTask);
+                if (window.syncTaskToCloud) window.syncTaskToCloud(newTask);
+            }
+
+            saveTasksToLocalStorage();
+            renderApp();
+            closeTaskModal();
+            showToast(taskId ? 'Task updated!' : 'New task created!', 'success');
+        }
+        window.handleTaskSubmit = handleTaskSubmit;
+
+        window.addEventListener('DOMContentLoaded', () => {
+            loadTasks();
+            renderApp();
+        });
+    </script>
+</body>
+</html>
